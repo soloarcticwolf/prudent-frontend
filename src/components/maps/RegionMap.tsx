@@ -64,8 +64,21 @@ export function RegionMap({ boundary }: { boundary: BoundaryResponse | null }) {
           paint: { "line-color": "#C96F53", "line-width": 2 },
         });
       }
-      const c = boundary.centroid;
-      if (c) map.flyTo({ center: [c.lon, c.lat], zoom: 8.5, duration: 900 });
+      const bb = boundary.bbox;
+      if (bb && bb.length === 4 && bb[2] > bb[0] && bb[3] > bb[1]) {
+        // Frame the whole region inside the viewport — never a fixed zoom
+        // that lands fully inside large regions or over-zooms small ones.
+        map.fitBounds(
+          [
+            [bb[0], bb[1]],
+            [bb[2], bb[3]],
+          ],
+          { padding: 40, duration: 900 },
+        );
+      } else {
+        const c = boundary.centroid;
+        if (c) map.flyTo({ center: [c.lon, c.lat], zoom: 5, duration: 900 });
+      }
     };
     if (map.isStyleLoaded()) apply();
     else map.once("load", apply);

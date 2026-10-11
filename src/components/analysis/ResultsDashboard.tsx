@@ -1,5 +1,7 @@
+import { useState } from "react";
 import type { AnalysisResult, AnnualMetric } from "../../types/api";
 import { ChevronDown } from "lucide-react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { AnalysisCharts } from "../charts/AnalysisCharts";
 import { MetricHow, ProvenanceSection } from "./ProvenanceSection";
 import { Alert, Badge, Card, CardHeader } from "../ui/primitives";
@@ -98,43 +100,75 @@ export function ResultsDashboard({ result }: { result: AnalysisResult }) {
         </ul>
       </Card>
 
-      <details className="group rounded-lg border border-line bg-surface shadow-[0_1px_2px_rgba(32,48,45,0.06)]">
-        <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 focus-visible:outline-2 focus-visible:outline-forest [&::-webkit-details-marker]:hidden">
-          <span>
-            <span className="font-serif text-lg text-ink">Expand result derivation</span>
-            <span className="block text-sm text-secondary">Sources, timestamps, and the full step-by-step calculation behind these results.</span>
-          </span>
-          <ChevronDown size={20} className="shrink-0 text-forest transition-transform duration-200 group-open:rotate-180" aria-hidden />
-        </summary>
-        <div className="border-t border-line p-4">
-          <ProvenanceSection result={result} />
-        </div>
-      </details>
+      <DerivationDisclosure result={result} />
+    </div>
+  );
+}
 
-      <Card>
-        <CardHeader title="Methodology & provenance" sub="How this result was produced and what limits it." />
-        <dl className="grid gap-x-8 gap-y-2 p-5 text-sm sm:grid-cols-2">
-          {[
-            ["Data provider", `${result.provider} (${result.dataset_version})`],
-            ["Aggregation", String(result.aggregation)],
-            ["Reference baseline", `${(result.baseline as { start?: number }).start ?? 1991}–${(result.baseline as { end?: number }).end ?? 2020}, 95th percentile ±7-day window`],
-            ["Heatwave definition", `≥3 consecutive valid days above calendar-day threshold (${result.methodology_version})`],
-            ["Analysis period", `${result.actual_start} → ${result.actual_end}`],
-            ["Trend method", "Ordinary least-squares on complete years; incomplete years excluded"],
-            ["Attribution", "Historical reanalysis via Open-Meteo archive API (ERA5 family)"],
-            ["Created", new Date(result.created_at).toLocaleString()],
-          ].map(([k, v]) => (
-            <div key={k} className="flex flex-col border-b border-line py-2">
-              <dt className="text-xs font-medium uppercase tracking-wide text-secondary">{k}</dt>
-              <dd className="mt-0.5 text-ink">{v}</dd>
+function DerivationDisclosure({ result }: { result: AnalysisResult }) {
+  const [open, setOpen] = useState(false);
+  const reduce = useReducedMotion();
+  return (
+    <div className="rounded-lg border border-line bg-surface shadow-[0_1px_2px_rgba(32,48,45,0.06)]">
+      <button
+        type="button"
+        onClick={() => setOpen((o) => !o)}
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left focus-visible:outline-2 focus-visible:outline-forest"
+      >
+        <span>
+          <span className="font-serif text-lg text-ink">
+            {open ? "Hide result derivation" : "Show result derivation"}
+          </span>
+          <span className="block text-sm text-secondary">
+            Sources, timestamps, methodology, and the full step-by-step calculation behind these results.
+          </span>
+        </span>
+        <ChevronDown
+          size={20}
+          aria-hidden
+          className={`shrink-0 text-forest transition-transform duration-200 ${open ? "rotate-180" : ""}`}
+        />
+      </button>
+      <AnimatePresence initial={false}>
+        {open && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: reduce ? 0 : 0.32, ease: "easeInOut" }}
+            className="overflow-hidden"
+          >
+            <div className="space-y-4 border-t border-line p-4">
+              <ProvenanceSection result={result} />
+              <Card>
+                <CardHeader title="Methodology & provenance" sub="How this result was produced and what limits it." />
+                <dl className="grid gap-x-8 gap-y-2 p-5 text-sm sm:grid-cols-2">
+                  {[
+                    ["Data provider", `${result.provider} (${result.dataset_version})`],
+                    ["Aggregation", String(result.aggregation)],
+                    ["Reference baseline", `${(result.baseline as { start?: number }).start ?? 1991}–${(result.baseline as { end?: number }).end ?? 2020}, 95th percentile ±7-day window`],
+                    ["Heatwave definition", `≥3 consecutive valid days above calendar-day threshold (${result.methodology_version})`],
+                    ["Analysis period", `${result.actual_start} → ${result.actual_end}`],
+                    ["Trend method", "Ordinary least-squares on complete years; incomplete years excluded"],
+                    ["Attribution", "Historical reanalysis via Open-Meteo archive API (ERA5 family)"],
+                    ["Created", new Date(result.created_at).toLocaleString()],
+                  ].map(([k, v]) => (
+                    <div key={k} className="flex flex-col border-b border-line py-2">
+                      <dt className="text-xs font-medium uppercase tracking-wide text-secondary">{k}</dt>
+                      <dd className="mt-0.5 text-ink">{v}</dd>
+                    </div>
+                  ))}
+                </dl>
+                <p className="px-5 pb-5 text-xs text-secondary">
+                  Known limits: coarse reanalysis resolution cannot describe street-level conditions; missing
+                  observations are excluded, never zero-filled; trend p-values are not causal proof.
+                </p>
+              </Card>
             </div>
-          ))}
-        </dl>
-        <p className="px-5 pb-5 text-xs text-secondary">
-          Known limits: coarse reanalysis resolution cannot describe street-level conditions; missing
-          observations are excluded, never zero-filled; trend p-values are not causal proof.
-        </p>
-      </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
