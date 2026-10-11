@@ -8,6 +8,14 @@ vi.mock("../components/maps/RegionMap", () => ({
   RegionMap: () => <div data-testid="region-map" />,
 }));
 
+// jsdom has no ResizeObserver (Recharts ResponsiveContainer needs it).
+class _RO {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+vi.stubGlobal("ResizeObserver", _RO);
+
 const regionObj = {
   region_id: "geo:test-1",
   display_name: "Testville",
@@ -48,6 +56,35 @@ const jobProcessing = {
   error: null,
 };
 
+const cachedResult = {
+  analysis_id: "an_1",
+  run_id: "run_1",
+  region_id: "geo:test-1",
+  display_name: "Testville",
+  admin_level: "city",
+  boundary_version: "v1:abc",
+  start_year: 2000,
+  end_year: 2002,
+  actual_start: "2000-01-01",
+  actual_end: "2002-12-31",
+  hazard: "heatwave",
+  methodology_version: "heatwave-v2",
+  baseline: { start: 1991, end: 2020 },
+  provider: "open-meteo",
+  dataset_version: "openmeteo-archive-v1",
+  aggregation: "sampled-area-mean-v1",
+  annual: [
+    { year: 2000, event_count: 1, heatwave_days: 3, mean_duration_days: 3, max_duration_days: 3, peak_tmax_c: 35, valid_days: 366, total_days: 366, completeness: 1, incomplete: false },
+    { year: 2001, event_count: 0, heatwave_days: 0, mean_duration_days: null, max_duration_days: null, peak_tmax_c: null, valid_days: 365, total_days: 365, completeness: 1, incomplete: false },
+  ],
+  trends: { heatwave_days: { supported: false, reason: "demo" } },
+  insights: [{ type: "total", metric: "heatwave_days", text: "3 total days." }],
+  warnings: [],
+  provenance: {},
+  provenance_detail: null,
+  created_at: new Date().toISOString(),
+};
+
 function mockFetch() {
   const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
@@ -71,8 +108,33 @@ function mockFetch() {
   });
 }
 
-function mockFetchCompletedWithMissingResult() {
+function mockFetchCacheHit() {
   const json = (body: unknown, status = 200) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { "Content-Type": "application/json" },
+    });
+  return vi.fn(async (input: unknown, init?: { method?: string }) => {
+    const url = String(input);
+    const method = (init?.method ?? "GET").toUpperCase();
+    if (url.includes("/api/v1/geography/search")) return json([regionObj]);
+    if (url.includes("/boundary")) return json(boundaryObj);
+    if (url.includes("/api/v1/geography/regions/")) return json(regionObj);
+    if (url.includes("/api/v1/analyses") && method === "POST") {
+      return json(
+        { status: "completed", job_id: "job_9", analysis_id: "an_1", cache_hit: true, message: "hit" },
+        200,
+      );
+    }
+    if (url.includes("/api/v1/jobs/job_9")) {
+      return json({ ...jobProcessing, job_id: "job_9", status: "completed", analysis_id: "an_1", progress_pct: 100 });
+    }
+    if (url.includes("/api/v1/analyses/an_1")) return json(cachedResult);
+    return json({ detail: `not mocked: ${url}` }, 404);
+  });
+}
+
+function mockFetchCompletedWithMissingResult() {  const json = (body: unknown, status = 200) =>
     new Response(JSON.stringify(body), {
       status,
       headers: { "Content-Type": "application/json" },
@@ -101,6 +163,8 @@ function mockFetchCompletedWithMissingResult() {
 afterEach(() => {
   cleanup();
   vi.unstubAllGlobals();
+  // unstubAllGlobals removes this too — restore for the next test.
+  vi.stubGlobal("ResizeObserver", _RO);
 });
 
 describe("ExplorePage analysis flow", () => {
@@ -132,6 +196,15 @@ describe("ExplorePage analysis flow", () => {
     await screen.findByRole("status");
     const hits = await screen.findAllByText(/Retrieving historical observations/);
     expect(hits.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("populates cached results instead of stalling on Analyze", async () => {
+    renderPage(mockFetchCacheHit());
+    await selectRegionAndAnalyze();
+
+    // Cache hit must render the stored report — not leave a dead button.
+    const title = await screen.findAllByText(/Testville — heatwaves 2000–2002/);
+    expect(title.length).toBeGreaterThanOrEqual(1);
   });
 
   it("re-enables Analyze when the job completes but the result is gone", async () => {

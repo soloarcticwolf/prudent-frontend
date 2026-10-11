@@ -93,7 +93,9 @@ export function ExplorePage() {
     onSuccess: (res) => {
       setFormError(null);
       setJobId(res.job_id);
-      if (res.cache_hit && res.analysis_id) qc.setQueryData(["analysis", res.analysis_id], null);
+      // Note: never pre-fill the ["analysis", id] cache here. The result query
+      // fetches the stored report itself; seeding it with null marks the query
+      // fresh and the cached report would never load (dead Analyze button).
     },
     onError: (e: Error) => setFormError(e.message),
   });
