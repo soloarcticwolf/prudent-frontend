@@ -1,19 +1,20 @@
 import type { AnalysisResult, AnnualMetric } from "../../types/api";
+import { ChevronDown } from "lucide-react";
 import { AnalysisCharts } from "../charts/AnalysisCharts";
 import { MetricHow, ProvenanceSection } from "./ProvenanceSection";
 import { Alert, Badge, Card, CardHeader } from "../ui/primitives";
 
-function summarize(annual: AnnualMetric[]) {
+export function summarize(annual: AnnualMetric[]) {
   const valid = annual.filter((a) => !a.incomplete);
   const totalEvents = valid.reduce((s, a) => s + a.event_count, 0);
   const totalDays = valid.reduce((s, a) => s + a.heatwave_days, 0);
-  const durs = valid.flatMap((a) => (a.mean_duration_days != null ? [a.mean_duration_days] : []));
   const maxDur = valid.reduce((m, a) => Math.max(m, a.max_duration_days ?? 0), 0);
   return {
     validYears: valid.length,
     totalEvents,
     totalDays,
-    meanDuration: durs.length ? durs.reduce((s, v) => s + v, 0) / durs.length : null,
+    // True mean over the same event set: total days / total events (not a mean of annual means).
+    meanDuration: totalEvents > 0 ? totalDays / totalEvents : null,
     maxDuration: valid.length ? maxDur : null,
   };
 }
@@ -61,7 +62,7 @@ export function ResultsDashboard({ result }: { result: AnalysisResult }) {
           sub={`Annual metrics · ${s.validYears} valid years · methodology ${result.methodology_version} · baseline ${(result.baseline as { start?: number }).start ?? 1991}–${(result.baseline as { end?: number }).end ?? 2020}`}
         />
         <div className="grid gap-3 p-5 sm:grid-cols-2 lg:grid-cols-3">
-          <Metric label="Heatwave events" value={String(s.totalEvents)} unit="events" def="Count of ≥3-day exceedance events in the interval." how={how("heatwave_events", "Detected ≥3-day exceedance events under heatwave-v1.")} />
+          <Metric label="Heatwave events" value={String(s.totalEvents)} unit="events" def="Count of ≥3-day exceedance events in the interval." how={how("heatwave_events", "Detected ≥3-day exceedance events under the reported methodology version.")} />
           <Metric label="Heatwave days" value={String(s.totalDays)} unit="days" def="Total days inside heatwave events." how={how("heatwave_days", "Sum of qualifying event durations, allocated by start year.")} />
           <Metric
             label="Mean event duration"
@@ -83,8 +84,6 @@ export function ResultsDashboard({ result }: { result: AnalysisResult }) {
         </div>
       </Card>
 
-      <ProvenanceSection result={result} />
-
       <AnalysisCharts annual={result.annual} />
 
       <Card>
@@ -99,6 +98,19 @@ export function ResultsDashboard({ result }: { result: AnalysisResult }) {
         </ul>
       </Card>
 
+      <details className="group rounded-lg border border-line bg-surface shadow-[0_1px_2px_rgba(32,48,45,0.06)]">
+        <summary className="flex cursor-pointer list-none items-center justify-between px-5 py-4 focus-visible:outline-2 focus-visible:outline-forest [&::-webkit-details-marker]:hidden">
+          <span>
+            <span className="font-serif text-lg text-ink">Expand result derivation</span>
+            <span className="block text-sm text-secondary">Sources, timestamps, and the full step-by-step calculation behind these results.</span>
+          </span>
+          <ChevronDown size={20} className="shrink-0 text-forest transition-transform duration-200 group-open:rotate-180" aria-hidden />
+        </summary>
+        <div className="border-t border-line p-4">
+          <ProvenanceSection result={result} />
+        </div>
+      </details>
+
       <Card>
         <CardHeader title="Methodology & provenance" sub="How this result was produced and what limits it." />
         <dl className="grid gap-x-8 gap-y-2 p-5 text-sm sm:grid-cols-2">
@@ -106,7 +118,7 @@ export function ResultsDashboard({ result }: { result: AnalysisResult }) {
             ["Data provider", `${result.provider} (${result.dataset_version})`],
             ["Aggregation", String(result.aggregation)],
             ["Reference baseline", `${(result.baseline as { start?: number }).start ?? 1991}–${(result.baseline as { end?: number }).end ?? 2020}, 95th percentile ±7-day window`],
-            ["Heatwave definition", "≥3 consecutive valid days above calendar-day threshold (heatwave-v1)"],
+            ["Heatwave definition", `≥3 consecutive valid days above calendar-day threshold (${result.methodology_version})`],
             ["Analysis period", `${result.actual_start} → ${result.actual_end}`],
             ["Trend method", "Ordinary least-squares on complete years; incomplete years excluded"],
             ["Attribution", "Historical reanalysis via Open-Meteo archive API (ERA5 family)"],

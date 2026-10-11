@@ -42,6 +42,7 @@ export interface AnnualMetric {
   peak_tmax_c?: number | null;
   valid_days: number;
   total_days: number;
+  missing_days?: number;
   completeness: number;
   incomplete: boolean;
 }

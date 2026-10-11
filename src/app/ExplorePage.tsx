@@ -59,11 +59,12 @@ export function ExplorePage() {
 
   const job = useAnalysisJob(jobId);
   const analysisId = job.data?.analysis_id ?? null;
-  const { data: result } = useQuery({
+  const resultQuery = useQuery({
     queryKey: ["analysis", analysisId],
     queryFn: () => api.analysis(analysisId as string),
     enabled: !!analysisId && ["completed", "completed_with_warnings"].includes(job.data?.status ?? ""),
   });
+  const result = resultQuery.data;
 
   useEffect(() => {
     if (region) {
@@ -116,11 +117,13 @@ export function ExplorePage() {
     submit.mutate();
   };
 
-  // Busy from click until the result renders (or the job fails/is cancelled).
-  // The spinner therefore covers submit + background polling + result fetch.
-  const analyzing =
-    submit.isPending ||
-    (!!jobId && !result && job.data?.status !== "failed" && job.data?.status !== "cancelled");
+  // Busy only while work is actually in flight. A job in a terminal state
+  // without a loadable result (e.g. backend restarted and dropped its
+  // in-memory data) must NOT wedge the button permanently disabled.
+  const TERMINAL = ["completed", "completed_with_warnings", "failed", "cancelled"];
+  const jobActive =
+    !!jobId && (job.isLoading || (job.data != null && !TERMINAL.includes(job.data.status)));
+  const analyzing = submit.isPending || resultQuery.isFetching || (!!jobId && !result && jobActive);
 
   // Clearing the selection (e.g. editing the search text) also drops the
   // region_id from the URL, so the deep-link resolver above does not refetch it.
@@ -247,6 +250,15 @@ export function ExplorePage() {
             error={job.error as Error | null}
             onCancel={() => jobId && api.cancelJob(jobId).then((j) => qc.setQueryData(["job", jobId], j))}
           />
+        ) : null}
+
+        {["completed", "completed_with_warnings"].includes(job.data?.status ?? "") &&
+        resultQuery.error &&
+        !result ? (
+          <Alert kind="error">
+            The analysis finished, but its result could not be loaded — the backend may have
+            restarted and dropped stored results. Run the analysis again.
+          </Alert>
         ) : null}
 
         {result ? (
